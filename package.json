@@ -1,0 +1,27 @@
+{
+  "name": "create-prettier-config",
+  "version": "1.0.0",
+  "description": "CLI to setup Prettier config files quickly",
+  "main": "index.js",
+  "bin": {
+    "create-prettier-config": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "template/"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "prettier",
+    "cli",
+    "code-style",
+    "formatter",
+    "setup",
+    "config"
+  ],
+  "author": "humamafif",
+  "license": "MIT",
+  "type": "commonjs"
+}

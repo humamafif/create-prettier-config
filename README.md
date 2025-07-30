@@ -1,4 +1,5 @@
 # Create Prettier Config 🧼
+
 CLI tool to quickly scaffold Prettier configuration files with sensible defaults.
 
 [![npm version](https://img.shields.io/npm/v/create-prettier-config)](https://www.npmjs.com/package/create-prettier-config)
@@ -32,7 +33,6 @@ It will:
 - Create `.vscode/settings.json`
 - Install `prettier` locally to your project
 
-
 ---
 
 ## 🧼 What if I change my mind?
@@ -40,15 +40,11 @@ It will:
 If you decide not to use Prettier after running the CLI, just clean it up:
 
 ```bash
-### Mac/Linux
-rm .prettierrc .prettierignore
-### Windows PowerShell
-Remove-Item .prettierrc, .prettierignore
-
-npm uninstall prettier
+npx create-prettier-config --revert
 ```
 
 ---
+
 ## 📦 Installation (Optional)
 
 If you prefer to install globally:
@@ -79,5 +75,6 @@ npm install -g create-prettier-config
 ---
 
 ## 👨‍💻 Author & License
+
 Created by [@humamafif](https://github.com/humamafif)
 [MIT](./LICENSE)

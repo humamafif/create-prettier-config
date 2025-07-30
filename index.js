@@ -7,11 +7,17 @@ const { execSync } = require("child_process");
 const isRevert = process.argv.includes("--revert");
 
 const filesToDelete = [".prettierrc", ".prettierignore"];
-const settingsDestPath = path.join(process.cwd(), ".vscode/settings.json");
+const settingsDir = path.join(process.cwd(), ".vscode");
+const settingsDestPath = path.join(settingsDir, "settings.json");
 const settingsBackupPath = path.join(
-  process.cwd(),
-  ".vscode/settings.backup.prettier.json"
+  settingsDir,
+  "settings.backup.prettier.json"
 );
+
+const prettierConfigBlock = `// create-prettier-config:start
+"editor.formatOnSave": true,
+"editor.defaultFormatter": "esbenp.prettier-vscode",
+// create-prettier-config:end`;
 
 function prompt(question) {
   const rl = readline.createInterface({
@@ -26,38 +32,22 @@ function prompt(question) {
   );
 }
 
+function removePrettierBlock(content) {
+  const start = content.indexOf("// create-prettier-config:start");
+  const end = content.indexOf("// create-prettier-config:end");
+  if (start !== -1 && end !== -1 && end > start) {
+    const before = content.slice(0, start);
+    const after = content.slice(end + "// create-prettier-config:end".length);
+    return before.trimEnd() + "\n" + after.trimStart();
+  }
+  return content;
+}
+
 (async function () {
   if (isRevert) {
     console.log("\n⏪ Reverting changes...");
 
-    if (fs.existsSync(settingsDestPath) && fs.existsSync(settingsBackupPath)) {
-      const stripJsonComments = (str) =>
-        str.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "");
-
-      const currentRaw = fs.readFileSync(settingsDestPath, "utf8");
-      const current = JSON.stringify(
-        JSON.parse(stripJsonComments(currentRaw)),
-        null,
-        2
-      );
-
-      const backup = JSON.stringify(
-        JSON.parse(fs.readFileSync(settingsBackupPath)),
-        null,
-        2
-      );
-
-      if (current !== backup) {
-        const answer = await prompt(
-          "⚠️  'settings.json' has been modified since setup. Reverting will overwrite changes. Proceed? (y/N): "
-        );
-        if (!/^y(es)?$/i.test(answer.trim())) {
-          console.log("❌ Revert cancelled.");
-          process.exit(0);
-        }
-      }
-    }
-
+    // Delete Prettier config files
     filesToDelete.forEach((file) => {
       const fullPath = path.join(process.cwd(), file);
       if (fs.existsSync(fullPath)) {
@@ -66,18 +56,38 @@ function prompt(question) {
       }
     });
 
-    if (fs.existsSync(settingsBackupPath)) {
-      fs.renameSync(settingsBackupPath, settingsDestPath);
-      console.log("✅ Restored: .vscode/settings.json");
+    // Restore or clean up settings.json
+    if (fs.existsSync(settingsDestPath)) {
+      let settingsContent = fs.readFileSync(settingsDestPath, "utf8");
+      const updatedContent = removePrettierBlock(settingsContent);
+
+      if (updatedContent !== settingsContent) {
+        const answer = await prompt(
+          "⚠️  Revert will modify .vscode/settings.json. Proceed? (y/N): "
+        );
+        if (!/^y(es)?$/i.test(answer.trim())) {
+          console.log("❌ Revert cancelled.");
+          process.exit(0);
+        }
+
+        fs.writeFileSync(settingsDestPath, updatedContent.trim() + "\n");
+        console.log("✅ Removed Prettier config from settings.json");
+      }
     }
 
+    // Delete backup if exists
+    if (fs.existsSync(settingsBackupPath)) {
+      fs.unlinkSync(settingsBackupPath);
+    }
+
+    // Uninstall prettier
     try {
       console.log("📦 Uninstalling Prettier...");
       execSync("npm uninstall prettier", { stdio: "inherit" });
       console.log("🧹 Prettier uninstalled.");
-    } catch (err) {
+    } catch {
       console.warn(
-        "⚠️ Failed to uninstall Prettier. Please remove it manually."
+        "⚠️  Failed to uninstall Prettier. Please remove it manually."
       );
     }
 
@@ -92,88 +102,64 @@ function prompt(question) {
     ".prettierignore": "template/.prettierignore",
   };
 
-  const settingsSrcPath = path.join(
-    __dirname,
-    "template/.vscode/settings.json"
-  );
-
   Object.entries(filesToCopy).forEach(([target, src]) => {
     const destPath = path.join(process.cwd(), target);
     const srcPath = path.join(__dirname, src);
-
-    if (!fs.existsSync(path.dirname(destPath))) {
-      fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    }
-
     fs.copyFileSync(srcPath, destPath);
     console.log(`✅ Created: ${target}`);
   });
+
+  if (!fs.existsSync(settingsDir)) {
+    fs.mkdirSync(settingsDir, { recursive: true });
+  }
+
+  // Backup if exists
+  let existingSettings = "";
+  if (fs.existsSync(settingsDestPath)) {
+    existingSettings = fs.readFileSync(settingsDestPath, "utf8");
+    fs.writeFileSync(settingsBackupPath, existingSettings);
+    console.log("📦 Backed up: existing settings.json");
+  }
+
+  // Update or create new settings.json
+  let result = "{}";
+  if (existingSettings) {
+    let lines = existingSettings.trim().split("\n");
+    const startIndex = lines.findIndex((line) =>
+      line.includes("// create-prettier-config:start")
+    );
+    const endIndex = lines.findIndex((line) =>
+      line.includes("// create-prettier-config:end")
+    );
+
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      lines.splice(startIndex, endIndex - startIndex + 1);
+    }
+
+    const insertIndex = lines.findIndex((line) => line.trim().startsWith("{"));
+    if (insertIndex !== -1) {
+      lines.splice(insertIndex + 1, 0, prettierConfigBlock);
+      result = lines.join("\n");
+    } else {
+      result = "{\n" + prettierConfigBlock + "\n}";
+    }
+  } else {
+    result = "{\n" + prettierConfigBlock + "\n}";
+  }
 
   if (!fs.existsSync(path.dirname(settingsDestPath))) {
     fs.mkdirSync(path.dirname(settingsDestPath), { recursive: true });
   }
 
-  let existingSettings = {};
-  if (fs.existsSync(settingsDestPath)) {
-    try {
-      existingSettings = JSON.parse(fs.readFileSync(settingsDestPath, "utf8"));
-      fs.writeFileSync(
-        settingsBackupPath,
-        JSON.stringify(existingSettings, null, 2)
-      );
-      console.log("📦 Backed up: existing .vscode/settings.json");
-    } catch (err) {
-      console.warn("⚠️ Failed to read existing settings.json. Will overwrite.");
-    }
-  }
+  fs.writeFileSync(settingsDestPath, result.trim() + "\n");
+  console.log("✅ Injected Prettier settings with tags.");
 
-  let newSettingsBlock = [
-    "  // >> Auto Generated Prettier settings ",
-    '  "editor.formatOnSave": true,',
-    '  "editor.defaultFormatter": "esbenp.prettier-vscode",',
-    "  // Auto Generated Prettier settings <<",
-  ];
-
-  let existingLines = [];
-  if (fs.existsSync(settingsDestPath)) {
-    existingLines = fs.readFileSync(settingsDestPath, "utf8").split("\n");
-  }
-
-  const startIndex = existingLines.findIndex((line) =>
-    line.includes("// create-prettier-config:start")
-  );
-  const endIndex = existingLines.findIndex((line) =>
-    line.includes("// create-prettier-config:end")
-  );
-
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    existingLines.splice(
-      startIndex,
-      endIndex - startIndex + 1,
-      ...newSettingsBlock
-    );
-  } else {
-    // Inject after opening brace (di atas properti lain)
-    const openingBraceIndex = existingLines.findIndex((line) =>
-      line.trim().startsWith("{")
-    );
-    if (openingBraceIndex !== -1) {
-      existingLines.splice(openingBraceIndex + 1, 0, ...newSettingsBlock);
-    } else {
-      existingLines = ["{", ...newSettingsBlock, "}"];
-    }
-  }
-
-  fs.writeFileSync(settingsDestPath, existingLines.join("\n"));
-  console.log("✅ Injected Prettier settings with comments.");
-
-  console.log("\n📦 Installing Prettier...");
+  // Install prettier
   try {
+    console.log("\n📦 Installing Prettier...");
     execSync("npm install --save-dev prettier", { stdio: "inherit" });
-    console.log("\n🎉 Prettier installed successfully!\n");
+    console.log("🎉 Prettier installed successfully!\n");
   } catch (err) {
-    console.error(
-      "❌ Failed to install Prettier. Please run manually: npm install --save-dev prettier"
-    );
+    console.error("❌ Failed to install Prettier.");
   }
 })();
